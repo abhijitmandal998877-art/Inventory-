@@ -1,0 +1,6 @@
+{
+  "name": "Mobile Billing",
+  "description": "A professional mobile billing app for small businesses to manage invoices, track payments, scan barcodes or QR codes, and generate beautiful PDF invoices.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
