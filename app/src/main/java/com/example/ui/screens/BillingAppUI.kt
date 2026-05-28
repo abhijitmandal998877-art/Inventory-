@@ -8,6 +8,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.Preview
+import androidx.camera.core.ImageAnalysis
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.*
@@ -996,6 +999,9 @@ fun RealScannerScreen(viewModel: BillingViewModel) {
         }
     }
 
+    var lastScannedBarcode by remember { mutableStateOf("") }
+    var lastScannedTime by remember { mutableStateOf(0L) }
+
     Scaffold { innerP ->
         Column(
             modifier = Modifier
@@ -1024,13 +1030,57 @@ fun RealScannerScreen(viewModel: BillingViewModel) {
                                 val preview = Preview.Builder().build().apply {
                                     setSurfaceProvider(previewView.surfaceProvider)
                                 }
+                                
+                                val imageAnalysis = ImageAnalysis.Builder()
+                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                    .build()
+                                
+                                val barcodeScanner = BarcodeScanning.getClient()
+                                
+                                imageAnalysis.setAnalyzer(executor) { imageProxy ->
+                                    @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
+                                    val mediaImage = imageProxy.image
+                                    if (mediaImage != null) {
+                                        val image = InputImage.fromMediaImage(
+                                            mediaImage,
+                                            imageProxy.imageInfo.rotationDegrees
+                                        )
+                                        barcodeScanner.process(image)
+                                            .addOnSuccessListener { barcodes ->
+                                                for (barcode in barcodes) {
+                                                    val rawValue = barcode.rawValue
+                                                    if (!rawValue.isNullOrBlank()) {
+                                                        val now = System.currentTimeMillis()
+                                                        if (rawValue != lastScannedBarcode || now - lastScannedTime > 2500) {
+                                                            lastScannedBarcode = rawValue
+                                                            lastScannedTime = now
+                                                            
+                                                            val message = viewModel.scanBarcode(rawValue)
+                                                            if (message != null) {
+                                                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                                            } else {
+                                                                Toast.makeText(context, "Scanned: $rawValue (Not in inventory)", Toast.LENGTH_LONG).show()
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            .addOnCompleteListener {
+                                                imageProxy.close()
+                                            }
+                                    } else {
+                                        imageProxy.close()
+                                    }
+                                }
+                                
                                 val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
                                 try {
                                     cameraProvider.unbindAll()
                                     cameraProvider.bindToLifecycle(
                                         lifecycleOwner,
                                         cameraSelector,
-                                        preview
+                                        preview,
+                                        imageAnalysis
                                     )
                                 } catch (exc: Exception) {
                                     Toast.makeText(context, "Camera preview display failed", Toast.LENGTH_SHORT).show()
